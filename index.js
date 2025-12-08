@@ -6,6 +6,8 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
+// const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
 const admin = require("firebase-admin");
 
 const serviceAccount = require("./firebase-adminsdk.json");
@@ -54,6 +56,7 @@ async function run() {
     const usersCollection = database.collection("users");
     const contestsCollection = database.collection("contests");
     const participantsCollection = database.collection("participants");
+    const paymentsCollection = database.collection("payments");
 
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded.email;
@@ -439,6 +442,57 @@ async function run() {
     });
 
     // Payment Routes
+    app.post("/create-payment-intent", verifyToken, async (req, res) => {
+      const { contestId, contestName, price, userEmail, userName, userPhoto } =
+        req.body;
+
+      const existing = await participantsCollection.findOne({
+        contestId: contestId,
+        userEmail: userEmail,
+      });
+
+      if (existing) {
+        return res
+          .status(400)
+          .send({ message: "Already registered for this contest" });
+      }
+
+      try {
+        // Create Stripe checkout session
+        const session = await stripe.checkout.sessions.create({
+          payment_method_types: ["card"],
+          line_items: [
+            {
+              price_data: {
+                currency: "usd",
+                product_data: {
+                  name: contestName,
+                  description: `Registration fee for ${contestName}`,
+                },
+                unit_amount: Math.round(price * 100), // Convert to cents
+              },
+              quantity: 1,
+            },
+          ],
+          mode: "payment",
+          success_url: `${process.env.CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}&contestId=${contestId}`,
+          cancel_url: `${process.env.CLIENT_URL}/contest/${contestId}?payment=cancelled`,
+          customer_email: userEmail,
+          metadata: {
+            contestId,
+            contestName,
+            userEmail,
+            userName,
+            userPhoto: userPhoto || "",
+          },
+        });
+
+        res.send({ sessionId: session.id, url: session.url });
+      } catch (error) {
+        console.error("Stripe error:", error);
+        res.status(500).send({ message: "Payment initialization failed" });
+      }
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });

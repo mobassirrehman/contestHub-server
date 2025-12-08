@@ -494,6 +494,81 @@ async function run() {
       }
     });
 
+    // Verify payment
+    app.post("/verify-payment", verifyToken, async (req, res) => {
+      const { sessionId } = req.body;
+
+      try {
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+        if (session.payment_status === "paid") {
+          const { contestId, contestName, userEmail, userName, userPhoto } =
+            session.metadata;
+
+          const existing = await participantsCollection.findOne({
+            contestId: contestId,
+            userEmail: userEmail,
+          });
+
+          if (existing) {
+            return res.send({ success: true, message: "Already registered" });
+          }
+
+          // Save payment record
+          const paymentRecord = {
+            sessionId: session.id,
+            contestId,
+            contestName,
+            userEmail,
+            userName,
+            amount: session.amount_total / 100,
+            currency: session.currency,
+            paymentStatus: session.payment_status,
+            paidAt: new Date(),
+          };
+          await paymentsCollection.insertOne(paymentRecord);
+
+          // Register participant
+          const participant = {
+            contestId,
+            contestName,
+            userEmail,
+            userName,
+            userPhoto: userPhoto || "",
+            paymentId: session.id,
+            createdAt: new Date(),
+          };
+          await participantsCollection.insertOne(participant);
+
+          // Increment participants count
+          await contestsCollection.updateOne(
+            { _id: new ObjectId(contestId) },
+            { $inc: { participantsCount: 1 } }
+          );
+
+          res.send({ success: true, message: "Registration successful" });
+        } else {
+          res
+            .status(400)
+            .send({ success: false, message: "Payment not completed" });
+        }
+      } catch (error) {
+        console.error("Payment verification error:", error);
+        res.status(500).send({ message: "Payment verification failed" });
+      }
+    });
+
+    // Get user's payment history
+    app.get("/payments/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const query = { userEmail: email };
+      const result = await paymentsCollection
+        .find(query)
+        .sort({ paidAt: -1 })
+        .toArray();
+      res.send(result);
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(

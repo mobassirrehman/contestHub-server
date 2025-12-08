@@ -404,6 +404,39 @@ async function run() {
     });
 
     //Statistics Routes
+    app.get("/stats", async (req, res) => {
+      const totalContests = await contestsCollection.countDocuments({
+        status: "approved",
+      });
+      const totalParticipants = await participantsCollection.countDocuments();
+      const totalWinners = await participantsCollection.countDocuments({
+        isWinner: true,
+      });
+
+      const prizePipeline = [
+        { $match: { winnerEmail: { $exists: true } } },
+        { $group: { _id: null, totalPrize: { $sum: "$prizeMoney" } } },
+      ];
+      const prizeResult = await contestsCollection
+        .aggregate(prizePipeline)
+        .toArray();
+      const totalPrizeMoney = prizeResult[0]?.totalPrize || 0;
+
+      const recentWinners = await contestsCollection
+        .find({ winnerEmail: { $exists: true } })
+        .sort({ winnerDeclaredAt: -1 })
+        .limit(5)
+        .project({ winnerName: 1, winnerPhoto: 1, prizeMoney: 1, name: 1 })
+        .toArray();
+
+      res.send({
+        totalContests,
+        totalParticipants,
+        totalWinners,
+        totalPrizeMoney,
+        recentWinners,
+      });
+    });
 
     // Payment Routes
 

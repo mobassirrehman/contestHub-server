@@ -53,7 +53,6 @@ async function run() {
     const database = client.db("contestHubDB");
     const usersCollection = database.collection("users");
     const contestsCollection = database.collection("contests");
-    const participantsCollection = database.collection("participants");
 
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded.email;
@@ -231,7 +230,7 @@ async function run() {
       res.send(result);
     });
 
-   //Admin contest management
+    //Admin contest management
     app.get("/admin/contests", verifyToken, verifyAdmin, async (req, res) => {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 10;
@@ -269,173 +268,8 @@ async function run() {
     );
 
     //Participation Routes
-    app.post("/participants", verifyToken, async (req, res) => {
-      const participant = req.body;
-      participant.createdAt = new Date();
-
-      const existing = await participantsCollection.findOne({
-        contestId: participant.contestId,
-        userEmail: participant.userEmail,
-      });
-
-      if (existing) {
-        return res.send({ message: "Already registered", insertedId: null });
-      }
-
-      const result = await participantsCollection.insertOne(participant);
-
-      if (result.insertedId) {
-        await contestsCollection.updateOne(
-          { _id: new ObjectId(participant.contestId) },
-          { $inc: { participantsCount: 1 } }
-        );
-      }
-
-      res.send(result);
-    });
-
-    app.get("/participants/check", verifyToken, async (req, res) => {
-      const { contestId, email } = req.query;
-      const existing = await participantsCollection.findOne({
-        contestId: contestId,
-        userEmail: email,
-      });
-      res.send({ isRegistered: !!existing, participant: existing });
-    });
-
-    app.get("/participants/:email", verifyToken, async (req, res) => {
-      const email = req.params.email;
-      const query = { userEmail: email };
-      const result = await participantsCollection
-        .find(query)
-        .sort({ createdAt: -1 })
-        .toArray();
-      res.send(result);
-    });
-
-    app.patch("/participants/:id/submit", verifyToken, async (req, res) => {
-      const id = req.params.id;
-      const { submittedTask } = req.body;
-      const filter = { _id: new ObjectId(id) };
-      const updateDoc = {
-        $set: {
-          submittedTask: submittedTask,
-          submittedAt: new Date(),
-        },
-      };
-      const result = await participantsCollection.updateOne(filter, updateDoc);
-      res.send(result);
-    });
-
-    app.get(
-      "/submissions/:contestId",
-      verifyToken,
-      verifyCreator,
-      async (req, res) => {
-        const contestId = req.params.contestId;
-        const query = {
-          contestId: contestId,
-          submittedTask: { $exists: true },
-        };
-        const result = await participantsCollection.find(query).toArray();
-        res.send(result);
-      }
-    );
-
-    app.patch(
-      "/contests/:id/winner",
-      verifyToken,
-      verifyCreator,
-      async (req, res) => {
-        const id = req.params.id;
-        const { winnerEmail, winnerName, winnerPhoto } = req.body;
-
-        const contestFilter = { _id: new ObjectId(id) };
-        const contestUpdate = {
-          $set: {
-            winnerEmail,
-            winnerName,
-            winnerPhoto,
-            winnerDeclaredAt: new Date(),
-          },
-        };
-        await contestsCollection.updateOne(contestFilter, contestUpdate);
-
-        const participantFilter = {
-          contestId: id,
-          userEmail: winnerEmail,
-        };
-        const participantUpdate = {
-          $set: { isWinner: true },
-        };
-        await participantsCollection.updateOne(
-          participantFilter,
-          participantUpdate
-        );
-
-        res.send({ success: true });
-      }
-    );
-
-    app.get("/winners/:email", verifyToken, async (req, res) => {
-      const email = req.params.email;
-      const query = { userEmail: email, isWinner: true };
-      const result = await participantsCollection.find(query).toArray();
-      res.send(result);
-    });
-
-    app.get("/leaderboard", async (req, res) => {
-      const pipeline = [
-        { $match: { isWinner: true } },
-        {
-          $group: {
-            _id: "$userEmail",
-            userName: { $first: "$userName" },
-            userPhoto: { $first: "$userPhoto" },
-            winCount: { $sum: 1 },
-          },
-        },
-        { $sort: { winCount: -1 } },
-        { $limit: 10 },
-      ];
-      const result = await participantsCollection.aggregate(pipeline).toArray();
-      res.send(result);
-    });
 
     //Statistics Routes
-    app.get("/stats", async (req, res) => {
-      const totalContests = await contestsCollection.countDocuments({
-        status: "approved",
-      });
-      const totalParticipants = await participantsCollection.countDocuments();
-      const totalWinners = await participantsCollection.countDocuments({
-        isWinner: true,
-      });
-
-      const prizePipeline = [
-        { $match: { winnerEmail: { $exists: true } } },
-        { $group: { _id: null, totalPrize: { $sum: "$prizeMoney" } } },
-      ];
-      const prizeResult = await contestsCollection
-        .aggregate(prizePipeline)
-        .toArray();
-      const totalPrizeMoney = prizeResult[0]?.totalPrize || 0;
-
-      const recentWinners = await contestsCollection
-        .find({ winnerEmail: { $exists: true } })
-        .sort({ winnerDeclaredAt: -1 })
-        .limit(5)
-        .project({ winnerName: 1, winnerPhoto: 1, prizeMoney: 1, name: 1 })
-        .toArray();
-
-      res.send({
-        totalContests,
-        totalParticipants,
-        totalWinners,
-        totalPrizeMoney,
-        recentWinners,
-      });
-    });
 
     // Payment Routes
 

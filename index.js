@@ -6,7 +6,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
-// const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const admin = require("firebase-admin");
 
@@ -159,7 +159,7 @@ async function run() {
       res.send(result);
     });
 
-    //  Contest Routes
+    //  Contest Routes(Creator only)
     app.post("/contests", verifyToken, verifyCreator, async (req, res) => {
       const contest = req.body;
       contest.status = "pending"; // pending, approved, rejected
@@ -388,20 +388,36 @@ async function run() {
       res.send(result);
     });
 
+    // Get leaderboard (users ranked by wins)
     app.get("/leaderboard", async (req, res) => {
+      const filter = req.query.filter || "all"; // all, month, week
+
+      let matchFilter = { isWinner: true };
+      const now = new Date();
+
+      if (filter === "week") {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        matchFilter.wonAt = { $gte: weekAgo };
+      } else if (filter === "month") {
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        matchFilter.wonAt = { $gte: monthAgo };
+      }
+
       const pipeline = [
-        { $match: { isWinner: true } },
+        { $match: matchFilter },
         {
           $group: {
             _id: "$userEmail",
             userName: { $first: "$userName" },
             userPhoto: { $first: "$userPhoto" },
             winCount: { $sum: 1 },
+            totalPrize: { $sum: { $ifNull: ["$prizeMoney", 0] } },
           },
         },
-        { $sort: { winCount: -1 } },
-        { $limit: 10 },
+        { $sort: { winCount: -1, totalPrize: -1 } },
+        { $limit: 20 },
       ];
+
       const result = await participantsCollection.aggregate(pipeline).toArray();
       res.send(result);
     });

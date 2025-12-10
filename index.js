@@ -158,6 +158,13 @@ async function run() {
       const result = await usersCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
+    // Delete user (Admin only)
+    app.delete("/users/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await usersCollection.deleteOne(query);
+      res.send(result);
+    });
 
     //  Contest Routes(Creator only)
     app.post("/contests", verifyToken, verifyCreator, async (req, res) => {
@@ -390,7 +397,7 @@ async function run() {
 
     // Get leaderboard (users ranked by wins)
     app.get("/leaderboard", async (req, res) => {
-      const filter = req.query.filter || "all"; // all, month, week
+      const filter = req.query.filter || "all";
 
       let matchFilter = { isWinner: true };
       const now = new Date();

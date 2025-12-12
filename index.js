@@ -169,7 +169,7 @@ async function run() {
     //  Contest Routes(Creator only)
     app.post("/contests", verifyToken, verifyCreator, async (req, res) => {
       const contest = req.body;
-      contest.status = "pending"; // pending, approved, rejected
+      contest.status = "pending";
       contest.participantsCount = 0;
       contest.createdAt = new Date();
 
@@ -391,7 +391,22 @@ async function run() {
     app.get("/winners/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
       const query = { userEmail: email, isWinner: true };
-      const result = await participantsCollection.find(query).toArray();
+      const winners = await participantsCollection.find(query).toArray();
+
+      // Get prizeMoney from each contest
+      const result = await Promise.all(
+        winners.map(async (winner) => {
+          const contest = await contestsCollection.findOne(
+            { _id: new ObjectId(winner.contestId) },
+            { projection: { prizeMoney: 1 } }
+          );
+          return {
+            ...winner,
+            prizeMoney: contest?.prizeMoney || 0,
+          };
+        })
+      );
+
       res.send(result);
     });
 

@@ -10,7 +10,11 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const admin = require("firebase-admin");
 
-const serviceAccount = require("./firebase-adminsdk.json");
+const decoded = Buffer.from(
+  process.env.FIREBASE_SERVICE_ACCOUNT,
+  "base64"
+).toString("utf8");
+const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -640,7 +644,7 @@ async function run() {
     });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );

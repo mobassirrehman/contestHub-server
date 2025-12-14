@@ -410,38 +410,70 @@ async function run() {
       res.send(result);
     });
 
-    // Get leaderboard (users ranked by wins)
+    // Get leaderboard with prize money
     app.get("/leaderboard", async (req, res) => {
-      const filter = req.query.filter || "all";
+      try {
+        const filter = req.query.filter || "all";
 
-      let matchFilter = { isWinner: true };
-      const now = new Date();
+        let matchFilter = { isWinner: true };
+        const now = new Date();
 
-      if (filter === "week") {
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        matchFilter.wonAt = { $gte: weekAgo };
-      } else if (filter === "month") {
-        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        matchFilter.wonAt = { $gte: monthAgo };
+        if (filter === "week") {
+          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          matchFilter.submittedAt = { $gte: weekAgo };
+        } else if (filter === "month") {
+          const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          matchFilter.submittedAt = { $gte: monthAgo };
+        }
+
+        const winners = await participantsCollection
+          .find(matchFilter)
+          .toArray();
+
+        const leaderboardMap = {};
+
+        for (const winner of winners) {
+          const email = winner.userEmail;
+
+          let prizeMoney = 0;
+          try {
+            const contest = await contestsCollection.findOne(
+              { _id: new ObjectId(winner.contestId) },
+              { projection: { prizeMoney: 1 } }
+            );
+            prizeMoney = contest?.prizeMoney || 0;
+          } catch (e) {
+            prizeMoney = 0;
+          }
+
+          if (leaderboardMap[email]) {
+            leaderboardMap[email].winCount += 1;
+            leaderboardMap[email].totalPrize += prizeMoney;
+          } else {
+            leaderboardMap[email] = {
+              _id: email,
+              userName: winner.userName,
+              userPhoto: winner.userPhoto,
+              winCount: 1,
+              totalPrize: prizeMoney,
+            };
+          }
+        }
+
+        const result = Object.values(leaderboardMap)
+          .sort(
+            (a, b) => b.winCount - a.winCount || b.totalPrize - a.totalPrize
+          )
+          .slice(0, 20);
+
+        res.send(result);
+      } catch (error) {
+        console.error("Leaderboard error:", error);
+        res.status(500).send({
+          message: "Failed to fetch leaderboard",
+          error: error.message,
+        });
       }
-
-      const pipeline = [
-        { $match: matchFilter },
-        {
-          $group: {
-            _id: "$userEmail",
-            userName: { $first: "$userName" },
-            userPhoto: { $first: "$userPhoto" },
-            winCount: { $sum: 1 },
-            totalPrize: { $sum: { $ifNull: ["$prizeMoney", 0] } },
-          },
-        },
-        { $sort: { winCount: -1, totalPrize: -1 } },
-        { $limit: 20 },
-      ];
-
-      const result = await participantsCollection.aggregate(pipeline).toArray();
-      res.send(result);
     });
 
     //Statistics Routes
@@ -507,7 +539,7 @@ async function run() {
                   name: contestName,
                   description: `Registration fee for ${contestName}`,
                 },
-                unit_amount: Math.round(price * 100), // Convert to cents
+                unit_amount: Math.round(price * 100),
               },
               quantity: 1,
             },

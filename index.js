@@ -21,7 +21,15 @@ admin.initializeApp({
 });
 
 // Middlewares
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "https://contesthub-contest-platform.netlify.app",
+      "http://localhost:5174",
+    ],
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.0zmmwcn.mongodb.net/?appName=Cluster0`;

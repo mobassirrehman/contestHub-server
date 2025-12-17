@@ -4,7 +4,7 @@ RESTful API server for ContestHub - a creative contest management platform.
 
 ## 🌐 Live Server
 
-**[ContestHub API]()**
+**[ContestHub API](https://contesthub-server-lovat.vercel.app)**
 
 ## ✨ Key Features
 
